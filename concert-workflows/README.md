@@ -1,4 +1,4 @@
-# Concert Workflows - remediation lifecycle for bankdemo + fraud-cve
+# Concert Workflows - remediation lifecycle for banco-kokunas
 
 These are real **IBM Concert Workflows** (importable `.json`/`.zip` flow
 definitions for a Concert Workflows instance), not GitHub Actions.
@@ -18,12 +18,16 @@ instance's real data was replayed/executed locally against the actual
 repo and the actual Concert API before being written here - see each
 folder's README for the exact verification performed.
 
+See [API_REFERENCE.md](API_REFERENCE.md) for the confirmed Concert 3.0
+core/ingestion API surface (auth header shape, working endpoints, dead
+ends already ruled out) - check it before probing the API by hand again.
+
 ## Layout
 
 ```
 concert-workflows/
 ├── discovery/       - scan/find CVEs, register applications in Concert
-├── remediation/     - fix CVEs (individual steps + the two orchestrators)
+├── remediation/     - fix CVEs (individual steps + the orchestrator)
 └── reset-demo/      - revert code + clean up Concert between demo runs
 ```
 
@@ -31,11 +35,11 @@ concert-workflows/
 
 | Workflow | What it does |
 |---|---|
-| [Trivy_GitHub_Scan](discovery/Trivy_GitHub_Scan) | Trivy SCA scan of a GitHub repo, CycloneDX report ingested into Concert. Run once per app (`bankdemo`, then `fraud-cve`) - trigger live, in front of the audience, to show Concert connecting to GitHub and detecting CVEs from nothing. Also sets the scanned application's `criticality`/`data_impact_risk` (needed so findings get prioritized instead of defaulting to "Deprioritized"). |
+| [Trivy_GitHub_Scan](discovery/Trivy_GitHub_Scan) | Trivy SCA scan of a GitHub repo, CycloneDX report ingested into Concert - trigger live, in front of the audience, to show Concert connecting to GitHub and detecting CVEs from nothing. Also sets the scanned application's `criticality`/`data_impact_risk` (needed so findings get prioritized instead of defaulting to "Deprioritized"). |
 | [Trivy_Image_Scan](discovery/Trivy_Image_Scan) | Trivy scan of the built container image (OS packages + bundled libraries), same `code_scan` ingestion path - workaround for `build_artifacts` registration being broken on this Concert install (see the top-level bug report). |
 | [Sync_AWS_Linux_Bulletin](discovery/Sync_AWS_Linux_Bulletin) | **Prerequisite** for `Trivy_SSH_Host_Scan`'s findings to generate a native `OS`-type auto-remediation action - unmodified IBM sample that scrapes the real Amazon Linux Security Advisory pages and populates Concert's `os_advisory_cache`. Run once, no inputs needed. |
 | [Trivy_SSH_Host_Scan](discovery/Trivy_SSH_Host_Scan) | Trivy OS-level scan of a live Linux host reached over SSH (script uploaded via SFTP, invoked by its bare path over SSH, output fetched via SFTP - `Common/SSH`'s `command` field cannot run any multi-word command in this Concert install, confirmed live). Uploads the result as Concert's native `vm_scan` CSV via the official `Import Data/Upload Files to Concert` block. |
-| [Simulate_CMDB_Applications](discovery/Simulate_CMDB_Applications) | Registers 3 fictional legacy applications directly via the core API (no scan behind them), each with a description naming a famous CVE (WannaCry/Heartbleed/Shellshock) that doesn't fit this demo's real stack. Stay "Manual" by design - contrast with the automated remediation on bankdemo/fraud-cve. |
+| [Simulate_CMDB_Applications](discovery/Simulate_CMDB_Applications) | Registers 3 fictional legacy applications directly via the core API (no scan behind them), each with a description naming a famous CVE (WannaCry/Heartbleed/Shellshock) that doesn't fit this demo's real stack. Stay "Manual" by design - contrast with the automated remediation on banco-kokunas. |
 
 ## remediation/ - fix things
 
@@ -49,32 +53,32 @@ Individual steps (each opens one PR):
 | [Verify_And_Notify](remediation/Verify_And_Notify) | Runs the isofunctional test suite + a fresh Trivy re-scan against the now-merged `main`, pushes the re-scan to Concert, marks the matching native Concert action `success`/`failed`, and emails the result |
 | [Remediate_SSH_Host](remediation/Remediate_SSH_Host) | OS-package CVEs on a live Linux host reached over SSH (no PR involved - there's no git repo behind a scanned host) - detects with Trivy, applies the fix and reboots via an `Ansible` playbook block (matching IBM's own `Apply_Amazon_Linux_Patch` pattern), re-scans to confirm, pushes the result to Concert, and closes out the matching native action via the official Action Insights blocks |
 
-Orchestrators (nest the individual steps above into one trigger):
+Orchestrator (nests the individual steps above into one trigger):
 
 | Workflow | Nests |
 |---|---|
-| [Remediate_All](remediation/Remediate_All) | `bankdemo`: Maven_Package_Upgrade + Spring_Property_Upgrade + SQLi_Code_Remediation -> merges all 3 PRs via the GitHub REST API -> Verify_And_Notify |
-| [Remediate_FraudCve](remediation/Remediate_FraudCve) | `fraud-cve`: a Struts_Property_Upgrade subflow (same property-bump pattern as Spring_Property_Upgrade, targeting `struts.version`) -> merges the PR -> Verify_And_Notify |
+| [Remediate_All](remediation/Remediate_All) | `banco-kokunas`: Maven_Package_Upgrade + Spring_Property_Upgrade + SQLi_Code_Remediation -> merges all 3 PRs via the GitHub REST API -> Verify_And_Notify |
 
 ## reset-demo/ - clean up between runs
 
 | Workflow | What it does |
 |---|---|
-| [Reset_Demo](reset-demo/Reset_Demo) | Reverts `pom.xml` (+ `VulnerableSearchRepository.java` for bankdemo) on both repos back to their `vulnerable-baseline` git tag, then deletes **only** the applications named in `application_names` from Concert (default: `bankdemo`, `fraud-cve`, the 3 simulated legacy apps) - safe to run against a Concert instance shared with other teams, since anything else is left untouched. |
+| [Reset_Demo](reset-demo/Reset_Demo) | Reverts `pom.xml` (+ `VulnerableSearchRepository.java`) back to the `vulnerable-baseline` git tag, then deletes **only** the applications named in `application_names` from Concert (default: `banco-kokunas`, the 3 simulated legacy apps) - safe to run against a Concert instance shared with other teams, since anything else is left untouched. |
+| [Delete_Repo_Data](reset-demo/Delete_Repo_Data) | Takes any single `gh_repo_url`, finds the Concert application registered from it, and deletes just that application (cascades to its own source_repos/risks/actions) - for one-off cleanup of a single repo's data without touching the rest of a shared instance. |
 
 ## Live demo flow
 
 1. **`Reset_Demo`** (reset-demo/) - run first, every time.
-2. **`Trivy_GitHub_Scan`** (discovery/) - once for `bankdemo`, once for `fraud-cve` (double-check `application_name` each time - the default won't change itself).
+2. **`Trivy_GitHub_Scan`** (discovery/) - double-check `application_name` each time - the default won't change itself.
 3. *(optional)* **`Simulate_CMDB_Applications`** (discovery/) - enrich the Arena view with legacy portfolio apps.
 4. *(Concert UI)* **Prioritize** - open the findings in Concert's Vulnerability dimension / Arena view.
-5. **`Remediate_All`** (remediation/) for bankdemo, **`Remediate_FraudCve`** (remediation/) for fraud-cve - remediate + merge + verify + notify, one trigger each.
-6. `oc rollout restart deployment/bankdemo-app -n banco-kokunas` and same for `fraud-cve-app`, so the running pods pick up the newly-published fixed image.
+5. **`Remediate_All`** (remediation/) - remediate + merge + verify + notify, one trigger.
+6. `oc rollout restart deployment/banco-kokunas-app -n banco-kokunas`, so the running pods pick up the newly-published fixed image.
 
 ## Prerequisites to run this for real
 
 1. A Concert Workflows instance (API Gateway URL, API key, instance ID - Concert Administration -> API keys).
-2. Two GitHub credentials/tokens, fine-grained PATs scoped one repo each (`contents:write` + `pull_requests:write`): `github_pat_java-app-cve` for `kokunas/java-app-cve`, `github_pat_fraud-cve` for `kokunas/fraud-cve`.
+2. A GitHub credential/token, a fine-grained PAT scoped to `kokunas/banco-kokunas` (`contents:write` + `pull_requests:write`): `github_pat_banco-kokunas`.
 3. An SMTP relay (host/port/username/password + a verified "from" address) for `Verify_And_Notify` (currently disabled pending SMTP setup - prints the notification instead of sending it). Store the password as a Concert credential, not inline.
 4. Nothing pre-registered in Concert - `Trivy_GitHub_Scan`'s ingestion auto-creates the application the first time it runs after a `Reset_Demo`.
 
@@ -89,6 +93,7 @@ to it for import:
 | Workflow | Import this |
 |---|---|
 | Reset_Demo | [`reset-demo/Reset_Demo/Reset_Demo.zip`](reset-demo/Reset_Demo/Reset_Demo.zip) |
+| Delete_Repo_Data | [`reset-demo/Delete_Repo_Data/Delete_Repo_Data.zip`](reset-demo/Delete_Repo_Data/Delete_Repo_Data.zip) |
 | Trivy_GitHub_Scan | [`discovery/Trivy_GitHub_Scan/Trivy_GitHub_Scan.zip`](discovery/Trivy_GitHub_Scan/Trivy_GitHub_Scan.zip) |
 | Trivy_Image_Scan | [`discovery/Trivy_Image_Scan/Trivy_Image_Scan.zip`](discovery/Trivy_Image_Scan/Trivy_Image_Scan.zip) |
 | Sync_AWS_Linux_Bulletin | [`discovery/Sync_AWS_Linux_Bulletin/Sync_AWS_Linux_Bulletin.zip`](discovery/Sync_AWS_Linux_Bulletin/Sync_AWS_Linux_Bulletin.zip) |
@@ -99,7 +104,6 @@ to it for import:
 | SQLi_Code_Remediation | [`remediation/SQLi_Code_Remediation/SQLi_Code_Remediation.zip`](remediation/SQLi_Code_Remediation/SQLi_Code_Remediation.zip) |
 | Verify_And_Notify | [`remediation/Verify_And_Notify/Verify_And_Notify.zip`](remediation/Verify_And_Notify/Verify_And_Notify.zip) |
 | Remediate_All (+ 3 nested subflows) | [`remediation/Remediate_All/Remediate_All.zip`](remediation/Remediate_All/Remediate_All.zip) |
-| Remediate_FraudCve (+ 2 nested subflows) | [`remediation/Remediate_FraudCve/Remediate_FraudCve.zip`](remediation/Remediate_FraudCve/Remediate_FraudCve.zip) |
 | Remediate_SSH_Host | [`remediation/Remediate_SSH_Host/Remediate_SSH_Host.zip`](remediation/Remediate_SSH_Host/Remediate_SSH_Host.zip) |
 
 Console -> Workflows -> Import -> select the `.zip`. See

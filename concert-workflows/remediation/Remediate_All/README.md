@@ -53,7 +53,7 @@ those:
     "recommendations": {
       "meta_data": {
         "org_name": "kokunas",
-        "repo_name": "java-app-cve",
+        "repo_name": "banco-kokunas",
         "base_branch": "main"
       },
       "changes": [
@@ -61,14 +61,14 @@ those:
         { "target": "org.apache.logging.log4j:log4j-api", "previous_version": "2.14.1", "new_version": "2.24.3" }
       ],
       "finding": {
-        "file": "src/main/java/com/kokunas/bankdemo/repository/VulnerableSearchRepository.java",
+        "file": "src/main/java/com/kokunas/bancokokunas/repository/VulnerableSearchRepository.java",
         "cwe": "CWE-89",
         "rule_id": "java-sqli-string-concat-jdbctemplate",
         "severity": "HIGH"
       }
     }
   },
-  "gh_repo_url": "https://github.com/kokunas/java-app-cve",
+  "gh_repo_url": "https://github.com/kokunas/banco-kokunas",
   "gh_api_token": "<GitHub token - contents:write + pull_requests:write>",
   "expected_cve": "CVE-2021-44228",
   "notify_email": "kokuna+democoncert@gmail.com",

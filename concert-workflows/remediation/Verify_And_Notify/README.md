@@ -51,7 +51,7 @@ supplied at trigger time.
 ```json
 {
   "input_json_data": {
-    "repo_url": "https://github.com/kokunas/java-app-cve",
+    "repo_url": "https://github.com/kokunas/banco-kokunas",
     "branch": "main"
   },
   "expected_cve": "CVE-2021-44228",

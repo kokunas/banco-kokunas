@@ -7,16 +7,16 @@ COPY src ./src
 RUN mvn -q -B package -DskipTests
 
 FROM eclipse-temurin:17-jre-jammy
-LABEL org.opencontainers.image.title="bankdemo" \
+LABEL org.opencontainers.image.title="banco-kokunas" \
       org.opencontainers.image.description="Banco Kokunas - mortgage & transfers demo (IBM Concert remediation lifecycle demo)" \
-      org.opencontainers.image.source="https://github.com/kokunas/java-app-cve" \
-      app.kubernetes.io/name="bankdemo" \
+      org.opencontainers.image.source="https://github.com/kokunas/banco-kokunas" \
+      app.kubernetes.io/name="banco-kokunas" \
       app.kubernetes.io/part-of="banco-kokunas"
 
-RUN groupadd -r bankdemo && useradd -r -g bankdemo bankdemo
+RUN groupadd -r banco-kokunas && useradd -r -g banco-kokunas banco-kokunas
 WORKDIR /app
-COPY --from=build /build/target/bankdemo.jar app.jar
-USER bankdemo
+COPY --from=build /build/target/banco-kokunas.jar app.jar
+USER banco-kokunas
 
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

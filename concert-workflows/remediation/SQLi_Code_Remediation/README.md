@@ -12,7 +12,7 @@ path requested for the demo, built to fit next to the log4j one.
 ## What it does
 
 Same shape as [Maven_Package_Upgrade](../Maven_Package_Upgrade), targeting
-`src/main/java/com/kokunas/bankdemo/repository/VulnerableSearchRepository.java`
+`src/main/java/com/kokunas/bancokokunas/repository/VulnerableSearchRepository.java`
 instead of `pom.xml`:
 
 1. Fetch the file content + base branch SHA.
@@ -50,11 +50,11 @@ a raw token needs to be supplied at trigger time.
     "recommendations": {
       "meta_data": {
         "org_name": "kokunas",
-        "repo_name": "java-app-cve",
+        "repo_name": "banco-kokunas",
         "base_branch": "main"
       },
       "finding": {
-        "file": "src/main/java/com/kokunas/bankdemo/repository/VulnerableSearchRepository.java",
+        "file": "src/main/java/com/kokunas/bancokokunas/repository/VulnerableSearchRepository.java",
         "cwe": "CWE-89",
         "rule_id": "java-sqli-string-concat-jdbctemplate",
         "severity": "HIGH"

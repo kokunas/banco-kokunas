@@ -12,9 +12,9 @@
     </parent>
 
     <groupId>com.kokunas</groupId>
-    <artifactId>bankdemo</artifactId>
+    <artifactId>banco-kokunas</artifactId>
     <version>1.0.0</version>
-    <name>bankdemo</name>
+    <name>banco-kokunas</name>
     <description>
         IBM Concert remediation-lifecycle demo: a mortgage-loan and funds-transfer
         banking application intentionally shipped with known (CVE-2021-44228, Log4Shell;
@@ -89,7 +89,7 @@
     </dependencies>
 
     <build>
-        <finalName>bankdemo</finalName>
+        <finalName>banco-kokunas</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

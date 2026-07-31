@@ -293,7 +293,7 @@
             "type": {
                 "type": "object"
             },
-            "value": "{\"recommendations\": {\"meta_data\": {\"org_name\": \"kokunas\", \"repo_name\": \"java-app-cve\", \"base_branch\": \"main\"}, \"finding\": {\"file\": \"src/main/java/com/kokunas/bankdemo/repository/VulnerableSearchRepository.java\", \"cwe\": \"CWE-89\", \"rule_id\": \"java-sqli-string-concat-jdbctemplate\", \"severity\": \"HIGH\"}}}"
+            "value": "{\"recommendations\": {\"meta_data\": {\"org_name\": \"kokunas\", \"repo_name\": \"banco-kokunas\", \"base_branch\": \"main\"}, \"finding\": {\"file\": \"src/main/java/com/kokunas/bancokokunas/repository/VulnerableSearchRepository.java\", \"cwe\": \"CWE-89\", \"rule_id\": \"java-sqli-string-concat-jdbctemplate\", \"severity\": \"HIGH\"}}}"
         },
         {
             "name": "updatedFileContent",
@@ -337,7 +337,7 @@
             "type": {
                 "type": "any"
             },
-            "value": "\"github_pat_java-app-cve\""
+            "value": "\"github_pat_banco-kokunas\""
         },
         {
             "name": "url",

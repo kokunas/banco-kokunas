@@ -1,0 +1,113 @@
+{
+    "name": "Delete_Repo_Data",
+    "platform": "node",
+    "blocks": [
+        {
+            "action": "comment",
+            "value": "Deletes ONLY the Concert data that traces back to a single git repo (the application it was registered under, plus that application's own source_repos/packages/risks/actions via cascade) - safely on a SHARED Concert instance, since applications not linked to this repo are never touched."
+        },
+        {
+            "action": "system/FaaS/Python",
+            "name": "delete_repo_data",
+            "inputs": [
+                {
+                    "name": "code",
+                    "value": "`\"\"\"\nScript to delete ONLY the Concert data that traces back to a single git\nrepo - safe to run against a SHARED Concert instance (one also used by\nother teams/demos - this must never touch data it didn't create itself):\n  1. Look up the source_repo(s) in Concert whose repo_url matches\n     gh_repo_url exactly (server-side filter by base64-encoded repo_url,\n     confirmed live to return only the exact match, not a substring/fuzzy\n     one).\n  2. For each matching source_repo, read its own detail to find which\n     application(s) it is associated with (associations.applications) -\n     a source_repo lists its parent application(s) by id/name, confirmed\n     live against this instance's real banco-kokunas source_repo.\n  3. Delete only those application(s) via the core API. Deleting an\n     application cascades to its own source_repos, packages, exposures\n     (the risks/findings) and any remediation actions tied to them\n     (confirmed live: this is the same cascade Reset_Demo relies on) -\n     so this alone removes the application, its risks and its actions\n     without a separate delete call for each. Applications that are NOT\n     linked to this repo (e.g. a manually-registered legacy app, or\n     another team's app) are never touched.\n\nThis uses subprocess.run() to execute curl, never use \"shell=True\" on\nuser-provided input!!\n\nInput parameters (variables injected by workflow):\n- gh_repo_url:           [required, string]  Repo URL exactly as registered in Concert,\n                          e.g. \"https://github.com/kokunas/banco-kokunas\" (no \".git\" suffix,\n                          no trailing slash - must match the repo_url Concert stored at\n                          ingestion time, since the lookup below is an exact match, not fuzzy)\n- concert_url:            [required, string]  URL of the Concert API Gateway\n- concert_api_key:        [required, string]  API Key to authenticate upon Concert\n- concert_instance_id:    [required, string]  Instance ID to clean up\n\"\"\"\n\nimport json as jsonlib\nimport base64\nfrom subprocess import run, PIPE, DEVNULL\nfrom sys import exit as sys_exit\n\n\ndef obfuscate(input_str):\n    if not input_str or len(input_str) <= 8:\n        return \"*\" * len(input_str or \"\")\n    return input_str[0:4] + (\"*\" * (len(input_str) - 4))\n\n\ndef curl_json(method, url, headers=None):\n    command = [\"curl\", \"--silent\", \"--show-error\", \"--request\", method, \"--url\", url]\n    for h in (headers or []):\n        command.extend([\"--header\", h])\n    result = run(command, check=False, stdout=PIPE, stderr=PIPE)\n    stdout = result.stdout.decode(\"utf-8\").strip() if result.stdout else \"\"\n    try:\n        parsed = jsonlib.loads(stdout) if stdout else {}\n    except jsonlib.JSONDecodeError:\n        parsed = {\"_raw\": stdout}\n    return result.returncode, parsed\n\n\n# Install curl (Python FaaS image is alpine-based, curl is not preinstalled)\ntry:\n    run([\"apk\", \"add\", \"curl\"], check=True, stdout=DEVNULL, stderr=DEVNULL)\n    print(\"curl successfully installed\")\nexcept Exception as e:\n    print(\"ERROR - Could not install curl:\", e)\n    sys_exit(1)\n\nprint(\"Input parameters\")\nprint(\"=\" * 100)\nprint(\"gh_repo_url         :\", gh_repo_url)\nprint(\"concert_url         :\", concert_url)\nprint(\"concert_api_key     :\", obfuscate(concert_api_key))\nprint(\"concert_instance_id :\", concert_instance_id)\nprint(\"=\" * 100)\n\nconcert_headers = [\n    f\"Authorization: C_API_KEY {concert_api_key}\",\n    f\"InstanceId: {concert_instance_id}\",\n]\nbase_url = concert_url.rstrip(\"/\")\n\n# Shared-instance safety: look up ONLY the source_repo(s) matching this\n# exact repo_url - never list/scan every source_repo in the instance to\n# guess a match, and never touch an application this repo isn't linked to.\nencoded_repo_url = base64.b64encode(gh_repo_url.encode(\"utf-8\")).decode(\"ascii\")\nrepos_url = f\"{base_url}/core/api/v1/source_repos?repo_url={encoded_repo_url}\"\nrc, repos_data = curl_json(\"GET\", repos_url, concert_headers)\nmatching_repos = repos_data.get(\"source_repos\", []) if rc == 0 else []\n\nif not matching_repos:\n    print(f\"No source_repo found in Concert for '{gh_repo_url}' - nothing to delete \"\n          f\"(this is safe/idempotent: either it was never scanned, or it was already removed)\")\n    sys_exit(0)\n\nprint(f\"Found {len(matching_repos)} source_repo(s) matching '{gh_repo_url}':\")\nfor sr in matching_repos:\n    print(f\"  - {sr.get('name')} ({sr.get('id')})\")\n\n# Resolve each matching source_repo to its parent application(s) - only\n# these applications get deleted, nothing else in the instance.\napps_to_delete = {}\nfor sr in matching_repos:\n    sr_id = sr.get(\"id\")\n    detail_url = f\"{base_url}/core/api/v1/source_repos/{sr_id}\"\n    rc, detail_data = curl_json(\"GET\", detail_url, concert_headers)\n    if rc != 0:\n        print(f\"ERROR - Could not fetch source_repo detail for {sr_id}:\", detail_data)\n        sys_exit(1)\n    linked_apps = (detail_data.get(\"associations\") or {}).get(\"applications\") or []\n    for app in linked_apps:\n        apps_to_delete[app[\"application_id\"]] = app.get(\"application_name\")\n\nif not apps_to_delete:\n    print(f\"source_repo(s) for '{gh_repo_url}' exist in Concert but are not linked to any \"\n          f\"application - nothing to delete\")\n    sys_exit(0)\n\nprint(f\"Deleting {len(apps_to_delete)} application(s) linked to '{gh_repo_url}' \"\n      f\"(cascades to that application's own source_repos/packages/risks/actions):\")\n\napps_url = f\"{base_url}/core/api/v1/applications\"\nfor app_id, app_name in apps_to_delete.items():\n    rc, _ = curl_json(\"DELETE\", f\"{apps_url}/{app_id}\", concert_headers)\n    print(f\"  deleted application '{app_name}' ({app_id}): {'ok' if rc == 0 else 'FAILED'}\")\n\nprint(f\"Done - all Concert data for '{gh_repo_url}' removed. \"\n      f\"Any other application/source_repo in this instance was left untouched.\")\n`"
+                },
+                {
+                    "name": "encoding",
+                    "value": "\"utf-8\""
+                },
+                {
+                    "name": "parameters",
+                    "value": "{\n    \"gh_repo_url\": $gh_repo_url,\n    \"concert_url\": $concert_url,\n    \"concert_api_key\": $concert_api_key,\n    \"concert_instance_id\": $concert_instance_id\n}"
+                }
+            ]
+        },
+        {
+            "action": "assign",
+            "name": "copy_delete_result",
+            "variable": "$result",
+            "value": "$delete_repo_data.result"
+        }
+    ],
+    "variables": [
+        {
+            "name": "result",
+            "required": false,
+            "isInput": false,
+            "isOutput": true,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "any"
+            },
+            "value": "\"\""
+        },
+        {
+            "name": "gh_repo_url",
+            "required": true,
+            "isInput": true,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"https://github.com/kokunas/banco-kokunas\""
+        },
+        {
+            "name": "concert_url",
+            "required": true,
+            "isInput": true,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"https://concert-concert.apps.itz-4j78fp.pok-lb.techzone.ibm.com\""
+        },
+        {
+            "name": "concert_api_key",
+            "required": true,
+            "isInput": true,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"\"",
+            "meta": {
+                "notLogged": true,
+                "subType": "password"
+            }
+        },
+        {
+            "name": "concert_instance_id",
+            "required": true,
+            "isInput": true,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"0000-0000-0000-0000\""
+        }
+    ],
+    "meta": {
+        "workerGroup": "default",
+        "description": "Deletes only the Concert data tied to one git repo: finds the source_repo matching gh_repo_url, resolves its parent application(s), and deletes just those - cascading to that application's own source_repos/packages/risks/actions. Every other application/source_repo in the instance is left untouched.",
+        "layout": "flow",
+        "numberOfBlocks": 3,
+        "version": 1,
+        "tags": [
+            {
+                "name": "Consumer",
+                "value": "Concert"
+            },
+            {
+                "name": "Category",
+                "value": "Demo housekeeping"
+            }
+        ]
+    },
+    "finally": null
+}

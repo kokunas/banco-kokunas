@@ -6,7 +6,7 @@ Source: adapted from IBM's official sample workflow
 original**: the upload step now also sends `application_name` /
 `application_version` in the ingestion metadata. Without this, Concert
 auto-creates the scanned app under a `placeholder_app_<base64(user)>` name
-instead of `bankdemo` - confirmed live against this repo/instance during
+instead of `banco-kokunas` - confirmed live against this repo/instance during
 development (see "Verified" below). Everything else is unmodified.
 
 ## What it does
@@ -37,13 +37,13 @@ you only need to paste that one:
 
 ```json
 {
-  "gh_repo_url": "https://github.com/kokunas/java-app-cve",
+  "gh_repo_url": "https://github.com/kokunas/banco-kokunas",
   "gh_api_token": "",
   "concert_url": "https://concert-concert.apps.itz-4j78fp.pok-lb.techzone.ibm.com",
   "concert_api_key": "<your Concert API key>",
   "concert_instance_id": "0000-0000-0000-0000",
   "concert_allow_insecure": false,
-  "application_name": "bankdemo",
+  "application_name": "banco-kokunas",
   "application_version": "1.0.0"
 }
 ```
@@ -55,7 +55,7 @@ Leave `gh_api_token` empty - the repo is public.
 Ran this exact modified logic (curl/trivy install steps swapped for
 already-installed local binaries, everything else identical) against the
 real repo and the real Concert instance: the scan completed, uploaded with
-`202 Accepted`, and the resulting Concert application was named `bankdemo`
+`202 Accepted`, and the resulting Concert application was named `banco-kokunas`
 directly - no placeholder name, no manual rename needed afterward.
 
 ## Expected findings
@@ -76,5 +76,5 @@ remediation paths.
 
 Once ingested, open the vulnerability in Concert's **Vulnerability**
 dimension or the **Arena view** to see it prioritized against the
-`bankdemo` application topology (public endpoint reachability, business
+`banco-kokunas` application topology (public endpoint reachability, business
 criticality, EPSS/exploitability) before triggering remediation.

@@ -26,7 +26,7 @@ Source: unmodified copy of IBM's official sample workflow
 Concert Workflows console -> Workflows -> Import -> `Maven_Package_Upgrade.zip`
 (the picker greys out loose `.json` files - always import the `.zip`).
 Needs a **GitHub** integration/credential configured in Concert with write
-access to `kokunas/java-app-cve` (a fine-grained PAT with `contents:write`
+access to `kokunas/banco-kokunas` (a fine-grained PAT with `contents:write`
 and `pull_requests:write` on that single repo is enough).
 
 ## Recommendation payload for this demo
@@ -37,7 +37,7 @@ a raw token needs to be supplied at trigger time.
 
 This is the shape Concert's own vulnerability-prioritization engine
 generates when you click "Apply recommended fix" on the CVE-2021-44228 /
-CVE-2021-45046 finding for `bankdemo` - reproduced here so the workflow can
+CVE-2021-45046 finding for `banco-kokunas` - reproduced here so the workflow can
 also be triggered by hand for the demo:
 
 ```json
@@ -49,7 +49,7 @@ also be triggered by hand for the demo:
     "recommendations": {
       "meta_data": {
         "org_name": "kokunas",
-        "repo_name": "java-app-cve",
+        "repo_name": "banco-kokunas",
         "base_branch": "main"
       },
       "changes": [
@@ -86,6 +86,6 @@ demo the diff live: it's a one-line cosmetic follow-up, not a functional
 gap. The resulting `pom.xml` is valid and all 11 isofunctional tests pass
 against it unchanged.
 
-The PR opened against `kokunas/java-app-cve` is what the
+The PR opened against `kokunas/banco-kokunas` is what the
 [Verify_And_Notify](../Verify_And_Notify) workflow validates (isofunctional
 test suite + re-scan) before notifying.

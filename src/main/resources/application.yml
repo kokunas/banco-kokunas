@@ -7,11 +7,11 @@ fraud:
 
 spring:
   application:
-    name: bankdemo
+    name: banco-kokunas
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:bankdemo}
-    username: ${DB_USER:bankdemo}
-    password: ${DB_PASSWORD:bankdemo}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:banco_kokunas}
+    username: ${DB_USER:banco_kokunas}
+    password: ${DB_PASSWORD:banco_kokunas}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -36,4 +36,4 @@ management:
 
 logging:
   level:
-    com.kokunas.bankdemo: info
+    com.kokunas.bancokokunas: info

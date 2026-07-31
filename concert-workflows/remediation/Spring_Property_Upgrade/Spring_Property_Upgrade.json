@@ -160,12 +160,12 @@
       "isOutput": false,
       "level": "INTERMEDIATE",
       "type": { "type": "object" },
-      "value": "{\"recommendations\": {\"meta_data\": {\"org_name\": \"kokunas\", \"repo_name\": \"java-app-cve\", \"base_branch\": \"main\"}, \"changes\": [{\"pom_property\": \"spring-framework.version\", \"previous_version\": \"5.3.17\", \"new_version\": \"5.3.39\"}]}}"
+      "value": "{\"recommendations\": {\"meta_data\": {\"org_name\": \"kokunas\", \"repo_name\": \"banco-kokunas\", \"base_branch\": \"main\"}, \"changes\": [{\"pom_property\": \"spring-framework.version\", \"previous_version\": \"5.3.17\", \"new_version\": \"5.3.39\"}]}}"
     },
     { "name": "updatedPomFileContent", "required": false, "isInput": false, "isOutput": false, "level": "INTERMEDIATE", "type": { "type": "string" }, "value": "\"\"" },
     { "name": "baseBranchSHA", "required": false, "isInput": false, "isOutput": false, "level": "INTERMEDIATE", "type": { "type": "string" }, "value": "\"\"" },
     { "name": "newBranchRef", "required": false, "isInput": false, "isOutput": false, "level": "INTERMEDIATE", "type": { "type": "string" }, "value": "\"\"" },
-    { "name": "auth", "required": false, "isInput": true, "isOutput": false, "level": "INTERMEDIATE", "type": { "type": "any" }, "value": "\"github_pat_java-app-cve\"" },
+    { "name": "auth", "required": false, "isInput": true, "isOutput": false, "level": "INTERMEDIATE", "type": { "type": "any" }, "value": "\"github_pat_banco-kokunas\"" },
     { "name": "url", "required": false, "isInput": false, "isOutput": true, "level": "INTERMEDIATE", "type": { "type": "object" }, "value": "{}" },
     { "name": "pr_body", "required": false, "isInput": false, "isOutput": false, "level": "INTERMEDIATE", "type": { "type": "string" }, "value": "\"\"" },
     { "name": "apiAuth", "required": false, "isInput": false, "isOutput": false, "level": "INTERMEDIATE", "type": { "type": "string" }, "value": "\"\"" },

@@ -1,53 +1,53 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: bankdemo-app
+  name: banco-kokunas-app
   namespace: banco-kokunas
   labels:
-    app.kubernetes.io/name: bankdemo
+    app.kubernetes.io/name: banco-kokunas
     app.kubernetes.io/component: web
     app.kubernetes.io/part-of: banco-kokunas
   annotations:
     # Hints consumed by Concert's application-resource discovery to link this
     # workload back to its source repository and container artifact.
-    app.kubernetes.io/source-repo: "https://github.com/kokunas/java-app-cve"
-    app.kubernetes.io/artifact: "ghcr.io/kokunas/java-app-cve:latest"
+    app.kubernetes.io/source-repo: "https://github.com/kokunas/banco-kokunas"
+    app.kubernetes.io/artifact: "ghcr.io/kokunas/banco-kokunas:latest"
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app.kubernetes.io/name: bankdemo
+      app.kubernetes.io/name: banco-kokunas
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: bankdemo
+        app.kubernetes.io/name: banco-kokunas
         app.kubernetes.io/component: web
         app.kubernetes.io/part-of: banco-kokunas
     spec:
       containers:
-        - name: bankdemo
-          image: ghcr.io/kokunas/java-app-cve:latest
+        - name: banco-kokunas
+          image: ghcr.io/kokunas/banco-kokunas:latest
           ports:
             - containerPort: 8080
           env:
             - name: DB_HOST
-              value: bankdemo-db
+              value: banco-kokunas-db
             - name: DB_PORT
               value: "5432"
             - name: DB_NAME
               valueFrom:
                 secretKeyRef:
-                  name: bankdemo-db-credentials
+                  name: banco-kokunas-db-credentials
                   key: DB_NAME
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: bankdemo-db-credentials
+                  name: banco-kokunas-db-credentials
                   key: DB_USER
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: bankdemo-db-credentials
+                  name: banco-kokunas-db-credentials
                   key: DB_PASSWORD
           readinessProbe:
             httpGet:

@@ -5,16 +5,16 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: bankdemo-app
+  name: banco-kokunas-app
   namespace: banco-kokunas
   labels:
-    app.kubernetes.io/name: bankdemo
+    app.kubernetes.io/name: banco-kokunas
     app.kubernetes.io/part-of: banco-kokunas
     concert.ibm.com/exposure: public
 spec:
   to:
     kind: Service
-    name: bankdemo-app
+    name: banco-kokunas-app
   port:
     targetPort: 80
   tls:

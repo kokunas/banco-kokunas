@@ -294,7 +294,7 @@
             "type": {
                 "type": "object"
             },
-            "value": "{\"recommendations\": {\"meta_data\": {\"org_name\": \"kokunas\", \"repo_name\": \"java-app-cve\", \"base_branch\": \"main\"}, \"changes\": [{\"target\": \"org.apache.logging.log4j:log4j-core\", \"previous_version\": \"2.14.1\", \"new_version\": \"2.24.3\"}, {\"target\": \"org.apache.logging.log4j:log4j-api\", \"previous_version\": \"2.14.1\", \"new_version\": \"2.24.3\"}]}}"
+            "value": "{\"recommendations\": {\"meta_data\": {\"org_name\": \"kokunas\", \"repo_name\": \"banco-kokunas\", \"base_branch\": \"main\"}, \"changes\": [{\"target\": \"org.apache.logging.log4j:log4j-core\", \"previous_version\": \"2.14.1\", \"new_version\": \"2.24.3\"}, {\"target\": \"org.apache.logging.log4j:log4j-api\", \"previous_version\": \"2.14.1\", \"new_version\": \"2.24.3\"}]}}"
         },
         {
             "name": "updatedPomFileContent",
@@ -338,7 +338,7 @@
             "type": {
                 "type": "any"
             },
-            "value": "\"github_pat_java-app-cve\""
+            "value": "\"github_pat_banco-kokunas\""
         },
         {
             "name": "url",
