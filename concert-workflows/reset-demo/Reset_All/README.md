@@ -24,10 +24,12 @@ carry on. At the end it lists everything again and returns
 `{deleted, failed, left_in_concert}` in `result`; the run fails if any
 delete failed.
 
-**Not possible: the Event log.** Concert has no API to delete or
-archive Event log entries (`table_of_contents/lz` only has search,
-summary and filters - `lz/archive` and `DELETE .../lz` are `404`). The
-old upload/delete events stay there.
+**Not possible from the workflow: the Event log.** Concert has no API
+to delete or archive Event log entries (`table_of_contents/lz` only has
+search, summary and filters - `lz/archive` and `DELETE .../lz` are
+`404`). It can only be emptied directly in Postgres - unsupported, see
+"Event log (manual, database)" in `API_REFERENCE.md`. It refills on its
+own: Concert logs scheduled jobs every hour.
 
 **Never touched:** credentials (Concert connections, Workflows
 authentications - a scan job's `credentials_id` is left alone when the

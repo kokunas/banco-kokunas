@@ -83,28 +83,47 @@ CSV format or its upload metadata. The OS identifier has to come from a
 **separate ConcertDef deploy SBOM** that registers the host as a
 `vm`-type runtime resource.
 
-Reverse-engineered the deploy SBOM shape from IBM's own
-[`concert-utils` toolkit](https://github.com/IBM/Concert/blob/main/toolkit-enablement/concert-utils/helpers)
-sample config
-(`concert-sample/templates/deploy-sbom-values.yaml.template`), since the
-raw `ConcertDef-1.0.2-Schema-deploy.json` schema file didn't show a
-matching `os`/`version` field on its `runtime-component-vm` definition -
-the toolkit's actual CLI output shape and the published JSON Schema
-file appear to have drifted:
-```yaml
-runtime:
-- name: "..."
-  type: "vm"
-  properties:
-    os: "${VM_OS_NAME}"      # must exactly match Concert's expected identifier, e.g. "amazon linux"
-    version: "${VM_OS_VERSION}"
-  network:
-    ipv4_addrs: ["..."]
-    hostname: "..."
+**Corrected 2026-10-01.** The first version of this step was
+reverse-engineered from the toolkit's *config* template
+(`deploy-sbom-values.yaml.template`: `concert.deployments[].runtime[]`,
+`properties.os`, `network.ipv4_addrs`). That is the toolkit's input, not a
+ConcertDef document: it fails all of IBM's published schemas (no
+`bomFormat`/`specVersion`/`metadata`) and Concert's own validator rejects it
+(`POST /core/api/v1/validate_concertdef_sbom` -> `400
+sbom_validation_extracting_metadata`), so the upload never registered the OS.
+
+The current shape follows IBM's
+[ConcertDef-1.0.2-Schema-deploy.json](https://github.com/IBM/Concert/tree/main/toolkit-enablement/concert-utils/concertdef_schema)
+and the [deploy sample](https://github.com/IBM/Concert/tree/main/concert-concertdef-samples)
+(`runtime-components`, `ipv4: [{addr}]`), validates against the 1.0.2 and
+2.0.0.1 schema files, and Concert's validator answers `200 The SBOM was
+validated successfully`:
+```json
+{
+  "bomFormat": "ConcertDef", "specVersion": "1.0.2",
+  "metadata": {"timestamp": "...", "type": "deploy", "environment": "<environment_target>",
+               "component": {"name": "<app>", "version": "<ver>", "deploy-number": "1"}},
+  "runtime-components": [{
+    "bom-ref": "vm:<host>", "type": "vm", "name": "<host>", "hostname": "<host>",
+    "ipv4": [{"addr": "<host>"}],
+    "properties": [{"name": "os", "value": "amazon linux"}, {"name": "version", "value": "2023"}],
+    "components": [{"type": "library", "name": "<app>", "version": "<ver>", "purl": "pkg:generic/<app>@<ver>"}]
+  }],
+  "dependencies": [{"ref": "vm:<host>", "dependsOn": ["library:<app>"]}]
+}
 ```
+Why the OS goes in name/value `properties`: Concert's VM auto-remediation
+(`ibm-roja-pipeline`, `src/vulnlib/remediations/utils/remediation_vm.py`)
+reads each host's resource metadata as `{name: value}` pairs, takes `os_family`
+or a normalised `os`, plus `version`, matches the host by IP, and skips hosts
+missing either ("missing os name or os version"). The schema lists only
+`vm_id` as a documented property name, but it accepts any name/value pair.
+The schema also requires at least one `components` entry on a VM, hence the
+`library` for the application.
 
 `BuildDeploySbom` builds this JSON directly (`os_name`/`os_version`
-inputs, defaulting to `"amazon linux"`/`"2023"`), and `UploadDeploySbom`
+inputs, defaulting to `"amazon linux"`/`"2023"`; `target_host` should be the
+same IP the `vm_scan` CSV uses, since that is how Concert links the two), and `UploadDeploySbom`
 pushes it via the same
 `system/IBM/Concert v2/Import Data/Upload Files to Concert` block used
 for the CSV, with `data_type: "application_sbom"` (per IBM's docs, this
@@ -250,9 +269,9 @@ a bare `JSON.parse` crash if this happens again.
 ## What it does
 
 1. **`BuildDeploySbom`** (plain JS `function` block): builds a ConcertDef
-   deploy SBOM JSON registering the target as a `vm`-type runtime with
-   `properties.os`/`properties.version` (`$os_name`/`$os_version`,
-   defaulting to `"amazon linux"`/`"2023"`) and its `network.hostname`.
+   1.0.2 deploy SBOM registering the target as a `vm` runtime component with
+   name/value properties `os`/`version` (`$os_name`/`$os_version`,
+   defaulting to `"amazon linux"`/`"2023"`), `hostname` and `ipv4`.
 2. **`UploadDeploySbom`**
    (`system/IBM/Concert v2/Import Data/Upload Files to Concert`,
    `data_type: "application_sbom"`): registers the runtime *before* any
@@ -346,15 +365,33 @@ now performs through native blocks.
   real, working IBM-published workflows, not guessed from a schema file.
 
 **Not verified - genuinely unconfirmed, and the main open question right now**:
-- Whether the deploy SBOM (`BuildDeploySbom`/`UploadDeploySbom`) actually
-  causes Concert to generate a native `OS`-type auto-remediation action -
-  this is new, reverse-engineered from a YAML config template (not a
-  finished JSON example), since the raw published `ConcertDef-1.0.2-
-  Schema-deploy.json` schema file didn't show a matching `properties.os`
-  field on its `runtime-component-vm` definition at all (the toolkit's
-  actual behavior and the published schema file appear to have drifted).
-  If the upload gets rejected or silently ignored, that mismatch is the
-  first thing to check.
+- Whether the corrected deploy SBOM (`BuildDeploySbom`/`UploadDeploySbom`)
+  makes Concert generate a native `OS`-type auto-remediation action end to
+  end. Verified so far (2026-10-01): the JSON the block produces passes
+  IBM's deploy schema (1.0.2 and 2.0.0.1 files) and Concert's
+  `validate_concertdef_sbom` (`200`), and the property names match what the
+  remediation code reads. Not yet run through a full upload + `vm_scan` on a
+  real host. The previous shape never passed validation.
 - Whether `Common/SFTP`'s `mode: "0755"` really does what the schema
   says (sets the uploaded file executable) - inferred from the block's
   own field description, not independently tested through Concert.
+
+## Where it lives
+
+Imported 2026-10-01 (with the corrected ConcertDef deploy SBOM) as
+`concertuser/User/Trivy_SSH_Host_Scan` on
+`concert-concert.apps.itz-r87cnx.pok-lb.techzone.ibm.com`, via
+`POST /workflows/api/v1/flows/concertuser/import` (zip with
+`Trivy_SSH_Host_Scan.json` at its root; `meta.created`/`lastUpdated`/
+`updatedByUsername` added on import). Credentials are run-time inputs
+(`ssh_auth`, `concert_auth`), so nothing in the JSON is tied to a user.
+For this reservation's RHEL 9 bastion use `target_host` `10.10.10.201`
+(the IP Concert's pods reach it on), `os_name` `redhat`, `os_version` `9`.
+
+## Fix 2026-10-01: upload content must be a string
+
+`Upload Files to Concert` was called with `"filename": [$...]` (an array).
+The block turns an array into a 1-byte file, so Concert accepted every
+upload (`202`) and then failed processing it (`ERR_FILE_PARSING_1`).
+Now `"filename": $...` (plain string), as confirmed live with BobShell Scan
+(102 exposures processed). See `API_REFERENCE.md`. Applies to `UploadDeploySbom` and `IngestScan`; re-imported on itz-r87cnx.

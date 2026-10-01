@@ -12,7 +12,7 @@
         },
         {
             "name": "BuildDeploySbom",
-            "function": "$deploy_sbom_json = JSON.stringify({\n    spec_version: \"1.0.2\",\n    concert: {\n        deployments: [\n            {\n                output_file: $application_name + \"-deploy.json\",\n                metadata: {\n                    component_name: $application_name,\n                    number: \"1\",\n                    version: $application_version\n                },\n                environment_target: $environment_target,\n                runtime: [\n                    {\n                        name: $application_name + \"-vm\",\n                        type: \"vm\",\n                        properties: {\n                            os: $os_name,\n                            version: $os_version\n                        },\n                        network: {\n                            ipv4_addrs: [$target_host],\n                            hostname: $target_host\n                        }\n                    }\n                ]\n            }\n        ]\n    }\n});\n"
+            "function": "// ConcertDef 1.0.2 deploy SBOM (bomFormat/specVersion/metadata.type = \"deploy\"), shape per IBM's\n// ConcertDef-1.0.2-Schema-deploy.json and validated by Concert's /core/api/v1/validate_concertdef_sbom.\n// The OS goes in the VM's name/value \"properties\": Concert's VM auto-remediation reads\n// \"os\" (or \"os_family\") and \"version\" from them and matches the host by its IP.\nconst vmRef = \"vm:\" + $target_host;\nconst libRef = \"library:\" + $application_name;\n$deploy_sbom_json = JSON.stringify({\n    bomFormat: \"ConcertDef\",\n    specVersion: \"1.0.2\",\n    metadata: {\n        timestamp: new Date().toISOString().replace(/\\.\\d{3}Z$/, \"Z\"),\n        type: \"deploy\",\n        environment: $environment_target,\n        component: {\n            name: $application_name,\n            version: $application_version,\n            \"deploy-number\": \"1\"\n        }\n    },\n    \"runtime-components\": [\n        {\n            \"bom-ref\": vmRef,\n            type: \"vm\",\n            name: $target_host,\n            hostname: $target_host,\n            ipv4: [{ addr: $target_host }],\n            properties: [\n                { name: \"os\", value: $os_name },\n                { name: \"version\", value: $os_version }\n            ],\n            // the schema requires at least one container/library deployed on the VM\n            components: [\n                {\n                    \"bom-ref\": libRef,\n                    type: \"library\",\n                    name: $application_name,\n                    version: $application_version,\n                    purl: \"pkg:generic/\" + encodeURIComponent($application_name) + \"@\" + encodeURIComponent($application_version)\n                }\n            ]\n        }\n    ],\n    dependencies: [{ ref: vmRef, dependsOn: [libRef] }]\n});\n"
         },
         {
             "action": "system/IBM/Concert v2/Import Data/Upload Files to Concert",
@@ -24,7 +24,7 @@
                 },
                 {
                     "name": "file",
-                    "value": "{\n    \"data_type\": \"application_sbom\",\n    \"filename\": [$deploy_sbom_json]\n}"
+                    "value": "{\n    \"data_type\": \"application_sbom\",\n    \"filename\": $deploy_sbom_json\n}"
                 },
                 {
                     "name": "fileType",
@@ -146,7 +146,7 @@
                 },
                 {
                     "name": "file",
-                    "value": "{\n    \"data_type\": \"vm_scan\",\n    \"metadata\": $metadata_str,\n    \"filename\": [$vm_scan_csv]\n}"
+                    "value": "{\n    \"data_type\": \"vm_scan\",\n    \"metadata\": $metadata_str,\n    \"filename\": $vm_scan_csv\n}"
                 },
                 {
                     "name": "fileType",
@@ -354,7 +354,8 @@
                 "name": "Category",
                 "value": "Vulnerability"
             }
-        ]
+        ],
+        "lastUpdated": 1790893029207
     },
     "finally": null
 }

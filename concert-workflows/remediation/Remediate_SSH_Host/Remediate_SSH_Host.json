@@ -247,7 +247,7 @@
                         },
                         {
                             "name": "file",
-                            "value": "{\n    \"data_type\": \"vm_scan\",\n    \"metadata\": $metadata_str,\n    \"filename\": [$vm_scan_csv]\n}"
+                            "value": "{\n    \"data_type\": \"vm_scan\",\n    \"metadata\": $metadata_str,\n    \"filename\": $vm_scan_csv\n}"
                         },
                         {
                             "name": "fileType",

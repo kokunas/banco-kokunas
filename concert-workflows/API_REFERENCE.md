@@ -107,6 +107,32 @@ To see why, read the parser itself: the bastion has `oc` with
 mapped columns are present, else `ERR_FILE_PARSING_1`) and
 `/app/src/exposlib/utils/preprocessing.py`.
 
+## Event log (manual, database) - confirmed 2026-10-01
+
+The Event log has no delete API. Its rows live in Postgres pod
+`roja-postgres-appdb-*` (namespace `concert`), database `appdb`, table
+**`ibm_roja_app.table_of_contents_lz`** (no foreign keys or triggers on
+it; the Evidence store is `table_of_contents_el` in the same schema).
+The DB user/password are **not** in env vars or `ROJA_AUTH_*`: they are
+`APPDB_USER`/`APPDB_PASSWORD`/`APPDB_DBNAME` in secret
+`app-cfg-oob-secret`, mounted in the pod at
+`/mnt/infra/app-cfg-oob-secret`. Read them inside the pod so they never
+get printed:
+
+```bash
+oc exec -i -n concert <roja-postgres-appdb pod> -- sh -c 'd=/mnt/infra/app-cfg-oob-secret; PGPASSWORD="$(cat $d/APPDB_PASSWORD)" psql -v ON_ERROR_STOP=1 -U "$(cat $d/APPDB_USER)" -d "$(cat $d/APPDB_DBNAME)"' <<'SQL'
+begin;
+create table ibm_roja_app.table_of_contents_lz_backup_<date> as table ibm_roja_app.table_of_contents_lz;
+delete from ibm_roja_app.table_of_contents_lz;
+commit;
+SQL
+```
+
+Run 2026-10-01 on itz-r87cnx: 709 rows backed up to
+`ibm_roja_app.table_of_contents_lz_backup_20261001` and deleted;
+`lz/search` then returned 0. The original files stay in the MinIO LZ
+bucket (`lz_path`). Unsupported by IBM.
+
 ## Dead ends (confirmed NOT to work - don't re-try these)
 
 - `DELETE /ingestion/api/v1/infrastructure/{id}` and `/infrastructure?id=` -> 404 / 405
@@ -174,6 +200,23 @@ mapped columns are present, else `ERR_FILE_PARSING_1`) and
   2026-10-01. Stored credential values are not readable from a flow
   (`authstorages` returns them as `null`), so a Python FaaS block can't
   reuse them - use this block instead.
+- **`Upload Files to Concert` block: pass the file content as a plain
+  string, never as an array** - `"filename": $csv`, not `"filename": [$csv]`.
+  The block's module (`/usr/src/app/modules/IBM/Concert/request.js` in the
+  `rna-core-pliant-worker` pod, namespace `concert-workflows`) does
+  `Buffer.from(fd, 'utf-8')` on the `filename` value: an array of strings
+  becomes a 1-byte file. Concert still answers `202`, the Event log shows
+  `file_size: 0.000001` and the `scan_processing_job` fails with
+  `ERR_FILE_PARSING_1` ("The data format is not in required format",
+  `preprocessing.py:493`) because there is no header to detect. Confirmed
+  live 2026-10-01: a 1-row valid CSV failed as an array and the real
+  102-row report processed fine as a string. (Note: the event's
+  `file_size` is not a reliable size check - it read `0.000001` for every
+  upload through this block.)
+- Real processing errors of an upload: the `scan_processing_job` runs as
+  pods `task-<id>-*` in namespace `concert`, deleted after 3 failed
+  retries. Capture them while they run (loop `oc logs -n concert <pod>`
+  every few seconds) and grep for the event id.
 - Run a flow without the UI: `POST /workflows/api/v1/trigger/<user>?folder=%2FUser%2F&name=<Name>&worker_group=default&event_source=EDITOR`
   with the inputs as JSON body -> `{"$uuid": ..., "$status": "Q"}`; the
   outcome shows up in `stats/filter` under that `id`. Confirmed 2026-10-01.

@@ -155,3 +155,11 @@ running old code after a re-import.
   `application_name`; this workflow's filter shape is carried over from
   this repo's own pre-existing (also not confirmed live end-to-end)
   `Verify_And_Notify` convention.
+
+## Fix 2026-10-01: upload content must be a string
+
+`Upload Files to Concert` was called with `"filename": [$...]` (an array).
+The block turns an array into a 1-byte file, so Concert accepted every
+upload (`202`) and then failed processing it (`ERR_FILE_PARSING_1`).
+Now `"filename": $...` (plain string), as confirmed live with BobShell Scan
+(102 exposures processed). See `API_REFERENCE.md`. Applies to its `vm_scan` upload; this flow is not imported on itz-r87cnx.
