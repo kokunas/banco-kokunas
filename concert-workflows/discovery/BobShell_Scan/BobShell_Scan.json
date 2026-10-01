@@ -1,0 +1,297 @@
+{
+    "name": "BobShell Scan - prueba epr",
+    "platform": "node",
+    "blocks": [
+        {
+            "action": "comment",
+            "value": "BobShell Scan: over SSH, runs /home/itzuser/scanner/bob_sast_format.sh on the bastion. Each *.csv report is routed by its header: known formats use a cached converter (scanner/converters/<signature>.py, no Bob call); unknown formats make IBM Bob Shell (bob run, headless) write a new converter, which is kept only if its output validates. The merged Concert SAST CSV is fetched over SFTP and uploaded as data_type static_code_scan. After a successful upload, archive_uploaded.sh moves the processed reports into scanner/history/<timestamp>/inputs/ (every validated run already keeps its CSV in scanner/history/<timestamp>/). Bob only needs an API key for unknown formats: the bob_api_key input (written to scanner/.bob.env over SFTP and deleted by the script) or, if empty, BOB_API_KEY from itzuser's environment on the bastion."
+        },
+        {
+            "action": "system/Common/SFTP/SFTP Put File",
+            "name": "UploadBobEnv",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Bastion\""
+                },
+                {
+                    "name": "file",
+                    "value": "\"/home/itzuser/scanner/.bob.env\""
+                },
+                {
+                    "name": "contents",
+                    "value": "\"BOB_API_KEY=\" + $bob_api_key + \"\\n\""
+                },
+                {
+                    "name": "mode",
+                    "value": "\"0600\""
+                },
+                {
+                    "name": "encoding",
+                    "value": "\"utf-8\""
+                }
+            ]
+        },
+        {
+            "action": "system/Common/SSH/SSH",
+            "name": "RunBob",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Bastion\""
+                },
+                {
+                    "name": "command",
+                    "value": "\"/home/itzuser/scanner/bob_sast_format.sh\"",
+                    "type": "const"
+                },
+                {
+                    "name": "timeout",
+                    "value": "600"
+                }
+            ]
+        },
+        {
+            "name": "CheckBobResult",
+            "function": "if (!$RunBob.success || $RunBob.exitcode !== 0) {\n    throw new Error(\"bob_sast_format.sh failed (exitcode=\" + $RunBob.exitcode + \"): \" + ($RunBob.result || $RunBob.error));\n}\n$bob_output = $RunBob.result;\n$script_output = ($RunBob.result || \"\").trim().split(\"\\n\");\n"
+        },
+        {
+            "action": "system/Common/SFTP/SFTP Get File",
+            "name": "FetchConcertCsv",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Bastion\""
+                },
+                {
+                    "name": "file",
+                    "value": "\"/home/itzuser/scanner/concert/concert-sast.csv\""
+                },
+                {
+                    "name": "encoding",
+                    "value": "\"utf-8\""
+                }
+            ]
+        },
+        {
+            "name": "BuildUpload",
+            "function": "const EXPECTED = \"rule id,rule name,file location,severity,line no.,status,issue description,first seen time,last seen time,solution,cwe id,tool name,issue type,score\";\nconst csv = ($FetchConcertCsv.result || \"\").replace(/^\\uFEFF/, \"\");\nif (!csv.trim()) throw new Error(\"FetchConcertCsv returned no content from concert-sast.csv\");\nconst header = csv.split(/\\r?\\n/, 1)[0].replace(/\"/g, \"\");\nif (header !== EXPECTED) throw new Error(\"Unexpected Concert SAST CSV header: \" + header);\n// bob_sast_format.sh already validated the rows with a real CSV parser (multi-line fields) and prints 'OK <n> findings' / 'REPO <url>'\nconst okMatch = /OK (\\d+) findings/.exec($bob_output || \"\");\nconst repoMatch = /^REPO (\\S+)/m.exec($bob_output || \"\");\n$sast_csv = csv;\n$finding_count = okMatch ? Number(okMatch[1]) : 0;\nconst metadata = {scanner_name: \"concert\"};\nconst repo = $repo_url || (repoMatch ? repoMatch[1] : \"\");\nif (!repo) throw new Error(\"No repo_url: set the repo_url input or use a report with GitHub /blob/ URLs (Concert requires repo_url and repo_name for static_code_scan)\");\nmetadata.repo_url = repo;\nmetadata.repo_name = $repo_name || repo.replace(/\\.git$/, \"\").replace(/\\/+$/, \"\").split(\"/\").pop();\nif ($application_name) metadata.application_name = $application_name;\nif ($application_version) metadata.application_version = $application_version;\n$metadata_str = JSON.stringify(metadata);\n"
+        },
+        {
+            "action": "system/IBM/Concert v2/Import Data/Upload Files to Concert",
+            "name": "IngestSast",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "file",
+                    "value": "{\n    \"data_type\": \"static_code_scan\",\n    \"metadata\": $metadata_str,\n    \"filename\": $sast_csv\n}"
+                },
+                {
+                    "name": "fileType",
+                    "value": "\"csv\""
+                }
+            ]
+        },
+        {
+            "action": "system/Common/SSH/SSH",
+            "name": "ArchiveUploaded",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Bastion\""
+                },
+                {
+                    "name": "command",
+                    "value": "\"/home/itzuser/scanner/archive_uploaded.sh\"",
+                    "type": "const"
+                },
+                {
+                    "name": "timeout",
+                    "value": "60"
+                }
+            ]
+        },
+        {
+            "name": "CheckArchive",
+            "function": "if (!$ArchiveUploaded.success || $ArchiveUploaded.exitcode !== 0) {\n    throw new Error(\"Uploaded to Concert, but archive_uploaded.sh failed (exitcode=\" + $ArchiveUploaded.exitcode + \"): \" + ($ArchiveUploaded.result || $ArchiveUploaded.error));\n}\n$archive_output = ($ArchiveUploaded.result || \"\").trim().split(\"\\n\");\n"
+        },
+        {
+            "action": "assign",
+            "name": "CopyIngestResult",
+            "variable": "$result",
+            "value": "{script_output: $script_output, findings: $finding_count, data_type: \"static_code_scan\", metadata: $metadata_str, upload: $IngestSast.result, archive_output: $archive_output}"
+        }
+    ],
+    "variables": [
+        {
+            "name": "result",
+            "required": false,
+            "isInput": false,
+            "isOutput": true,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "any"
+            },
+            "value": "\"\""
+        },
+        {
+            "name": "bob_api_key",
+            "required": false,
+            "isInput": true,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"\"",
+            "meta": {
+                "description": "Optional. Only used when a report's format is unknown and Bob has to write a new converter; if empty, the BOB_API_KEY from itzuser's ~/.bashrc on the bastion is used."
+            }
+        },
+        {
+            "name": "repo_url",
+            "required": false,
+            "isInput": true,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"\"",
+            "meta": {
+                "description": "Source repo the SAST findings belong to. Empty = taken from the GitHub URLs in the input report."
+            }
+        },
+        {
+            "name": "repo_name",
+            "required": false,
+            "isInput": true,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"\"",
+            "meta": {
+                "description": "Repository name for Concert (required by Concert together with repo_url). Empty = last segment of repo_url."
+            }
+        },
+        {
+            "name": "application_name",
+            "required": false,
+            "isInput": true,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"\"",
+            "meta": {
+                "description": "Concert application to attach the findings to (optional upload metadata)."
+            }
+        },
+        {
+            "name": "application_version",
+            "required": false,
+            "isInput": true,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"\"",
+            "meta": {
+                "description": "Application version (optional upload metadata)."
+            }
+        },
+        {
+            "name": "bob_output",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"\""
+        },
+        {
+            "name": "sast_csv",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"\""
+        },
+        {
+            "name": "metadata_str",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "string"
+            },
+            "value": "\"\""
+        },
+        {
+            "name": "finding_count",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "number"
+            },
+            "value": "0"
+        },
+        {
+            "name": "script_output",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "any"
+            },
+            "value": "[]"
+        },
+        {
+            "name": "archive_output",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "any"
+            },
+            "value": "[]"
+        }
+    ],
+    "meta": {
+        "workerGroup": "default",
+        "created": 1790785317965,
+        "lastUpdated": 1790892338036,
+        "description": "SSH to the Linux bastion, run IBM Bob Shell (headless) to reformat raw SAST reports into Concert's native SAST CSV, and upload them to Concert as static_code_scan.",
+        "layout": "flow",
+        "updatedByUsername": "concertuser",
+        "numberOfBlocks": 10,
+        "version": 5,
+        "tags": [
+            {
+                "name": "Consumer",
+                "value": "Concert"
+            },
+            {
+                "name": "Category",
+                "value": "Vulnerability"
+            }
+        ]
+    }
+}
