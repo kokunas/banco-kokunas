@@ -64,6 +64,7 @@ Orchestrator (nests the individual steps above into one trigger):
 | Workflow | What it does |
 |---|---|
 | [Reset_Demo](reset-demo/Reset_Demo) | Reverts `pom.xml` (+ `VulnerableSearchRepository.java`) back to the `vulnerable-baseline` git tag, then deletes **only** the applications named in `application_names` from Concert (default: `banco-kokunas`, the 3 simulated legacy apps) - safe to run against a Concert instance shared with other teams, since anything else is left untouched. |
+| [Reset_All](reset-demo/Reset_All) | **Blanket wipe of the whole instance**: deletes every application, source repo (and its repo scan connection), build artifact, environment/host and action - so every CVE and exposure goes too - and archives every Evidence store file (the Event log can't be cleared). Never touches credentials or workflows. No inputs (uses the stored `concertuser/Concert` credential) - running it deletes. |
 | [Delete_Repo_Data](reset-demo/Delete_Repo_Data) | Takes any single `gh_repo_url`, finds the Concert application registered from it, and deletes just that application (cascades to its own source_repos/risks/actions) - for one-off cleanup of a single repo's data without touching the rest of a shared instance. |
 
 ## Live demo flow

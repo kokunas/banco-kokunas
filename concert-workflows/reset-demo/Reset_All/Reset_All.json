@@ -1,0 +1,658 @@
+{
+    "name": "Reset_All",
+    "platform": "node",
+    "blocks": [
+        {
+            "action": "comment",
+            "value": "Reset all: borra TODOS los datos de vulnerabilidades de esta instancia de Concert - conexiones de escaneo de repos, aplicaciones, repositorios, build artifacts, entornos/hosts y acciones (y con ellos todas las CVEs y exposures), y archiva los ficheros del Evidence store. NO toca credenciales ni workflows. Usa la credencial guardada concertuser/Concert."
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "ListJobs",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"GET\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/core/api/v1/ingestion_jobs\""
+                },
+                {
+                    "name": "query",
+                    "value": "\"page_size=2000\""
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "ListApps",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"GET\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/core/api/v2/applications\""
+                },
+                {
+                    "name": "query",
+                    "value": "\"filter=versions%3Aall&page_size=2000\""
+                }
+            ]
+        },
+        {
+            "name": "PlanFirst",
+            "function": "// 1) Repo scan connections: otherwise a scheduled re-scan would recreate\n//    the applications. The credential each job points to is left alone.\n// 2) Every application: cascades to its repos, packages, CVEs, exposures\n//    and actions (async - the app goes to delete_pending first).\nconst jobs = ($ListJobs.result.ingestion_jobs || [])\n    .filter(j => j.type === \"source_control_discovery_job\");\nconst apps = $ListApps.result.applications || [];\n$ops_first = jobs.map(j => ({\n    label: \"scan connection \" + j.name,\n    method: \"DELETE\",\n    path: \"/core/api/v1/ingestion_jobs/\" + j.id,\n    query: {}\n})).concat(apps.map(a => ({\n    label: \"application \" + a.name,\n    method: \"DELETE\",\n    path: \"/core/api/v2/applications/\" + a.id,\n    query: {}\n})));\n$apps_left = apps.length;"
+        },
+        {
+            "action": "foreach",
+            "name": "DeleteFirst",
+            "list": "$ops_first",
+            "blocks": [
+                {
+                    "action": "try",
+                    "name": "TryDeleteFirst",
+                    "try": [
+                        {
+                            "action": "if",
+                            "name": "IfDeleteFirstPost",
+                            "condition": "$DeleteFirst.item.method === \"POST\"",
+                            "then": [
+                                {
+                                    "action": "system/IBM/Concert v2/Concert HTTP Request",
+                                    "name": "DeleteFirstPost",
+                                    "inputs": [
+                                        {
+                                            "name": "authKey",
+                                            "value": "\"concertuser/Concert\""
+                                        },
+                                        {
+                                            "name": "method",
+                                            "value": "\"POST\""
+                                        },
+                                        {
+                                            "name": "path",
+                                            "value": "$DeleteFirst.item.path"
+                                        },
+                                        {
+                                            "name": "query",
+                                            "value": "$DeleteFirst.item.query"
+                                        },
+                                        {
+                                            "name": "body",
+                                            "value": "$DeleteFirst.item.body"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "else": [
+                                {
+                                    "action": "system/IBM/Concert v2/Concert HTTP Request",
+                                    "name": "DeleteFirstDelete",
+                                    "inputs": [
+                                        {
+                                            "name": "authKey",
+                                            "value": "\"concertuser/Concert\""
+                                        },
+                                        {
+                                            "name": "method",
+                                            "value": "\"DELETE\""
+                                        },
+                                        {
+                                            "name": "path",
+                                            "value": "$DeleteFirst.item.path"
+                                        },
+                                        {
+                                            "name": "query",
+                                            "value": "$DeleteFirst.item.query"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "name": "DeleteFirstOk",
+                            "function": "$deleted = $deleted.concat([$DeleteFirst.item.label]);"
+                        }
+                    ],
+                    "catch": [
+                        {
+                            "name": "DeleteFirstFailed",
+                            "function": "$failed = $failed.concat([{ item: $DeleteFirst.item.label, error: String($TryDeleteFirst.message || $TryDeleteFirst) }]);"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "action": "comment",
+            "value": "Application deletes are async: wait (15s x 20 max) until no application is active or delete_pending, so their own repos/actions are gone before handling orphans."
+        },
+        {
+            "action": "while",
+            "name": "WaitApps",
+            "condition": "$apps_left > 0 && $wait_rounds < 20",
+            "blocks": [
+                {
+                    "action": "system/Common/Sleep",
+                    "name": "WaitStep",
+                    "inputs": [
+                        {
+                            "name": "seconds",
+                            "value": "15"
+                        }
+                    ]
+                },
+                {
+                    "action": "system/IBM/Concert v2/Concert HTTP Request",
+                    "name": "WaitActive",
+                    "inputs": [
+                        {
+                            "name": "authKey",
+                            "value": "\"concertuser/Concert\""
+                        },
+                        {
+                            "name": "method",
+                            "value": "\"GET\""
+                        },
+                        {
+                            "name": "path",
+                            "value": "\"/core/api/v2/applications\""
+                        },
+                        {
+                            "name": "query",
+                            "value": "\"filter=versions%3Aall&page_size=2000\""
+                        }
+                    ]
+                },
+                {
+                    "action": "system/IBM/Concert v2/Concert HTTP Request",
+                    "name": "WaitPending",
+                    "inputs": [
+                        {
+                            "name": "authKey",
+                            "value": "\"concertuser/Concert\""
+                        },
+                        {
+                            "name": "method",
+                            "value": "\"GET\""
+                        },
+                        {
+                            "name": "path",
+                            "value": "\"/core/api/v2/applications\""
+                        },
+                        {
+                            "name": "query",
+                            "value": "\"filter=status%3Adelete_pending&page_size=2000\""
+                        }
+                    ]
+                },
+                {
+                    "name": "CountLeft",
+                    "function": "$apps_left = ($WaitActive.result.applications || []).length + ($WaitPending.result.applications || []).length;\n$wait_rounds = $wait_rounds + 1;"
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "ListRepos",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"GET\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/core/api/v1/source_repos\""
+                },
+                {
+                    "name": "query",
+                    "value": "\"page_size=2000\""
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "ListArtifacts",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"GET\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/core/api/v1/build_artifacts\""
+                },
+                {
+                    "name": "query",
+                    "value": "\"page_size=2000\""
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "ListEnvs",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"GET\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/core/api/v1/environments\""
+                },
+                {
+                    "name": "query",
+                    "value": "\"page_size=2000\""
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "ListActions",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"POST\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/ingestion/api/v1/actions/search\""
+                },
+                {
+                    "name": "body",
+                    "value": "{\n    \"pagination\": {\n        \"page\": 1,\n        \"page_size\": 500\n    }\n}"
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "ListEvidence",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"POST\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/ingestion/api/v1/table_of_contents/el/search\""
+                },
+                {
+                    "name": "body",
+                    "value": "{\n    \"page\": 1,\n    \"page_size\": 500\n}"
+                }
+            ]
+        },
+        {
+            "name": "PlanSecond",
+            "function": "// Whatever the application deletes did not cascade to: orphan repos,\n// build artifacts, environments (hosts/VMs and their OS CVEs) and actions.\n// Evidence store files can't be deleted, only archived - the Evidence\n// store page hides archived ones (it filters is_archived = false).\nconst repos = $ListRepos.result.source_repos || [];\nconst arts = $ListArtifacts.result.build_artifacts || [];\nconst envs = $ListEnvs.result.environments || [];\nconst acts = $ListActions.result.actions || [];\nconst evidence = ($ListEvidence.result.toc_records || []).filter(r => !r.is_archived);\n$ops_second = repos.map(r => ({\n    label: \"source repo \" + r.repo_url,\n    method: \"DELETE\",\n    path: \"/core/api/v1/source_repos/\" + r.id,\n    query: { is_cascade_delete: \"true\" }\n})).concat(arts.map(b => ({\n    label: \"build artifact \" + b.name,\n    method: \"DELETE\",\n    path: \"/core/api/v1/build_artifacts/\" + b.id,\n    query: { is_cascade_delete: \"true\" }\n}))).concat(envs.map(e => ({\n    label: \"environment \" + e.name,\n    method: \"DELETE\",\n    path: \"/core/api/v1/environments/\" + e.id,\n    query: {}\n}))).concat(acts.map(a => ({\n    label: \"action #\" + a.actions_identifier + \" on \" + a.target_component_identifier,\n    method: \"POST\",\n    path: \"/ingestion/api/v1/actions/delete\",\n    query: {},\n    body: {\n        filters: {\n            logic: \"and\",\n            conditions: [\n                { field: \"actions_identifier\", operator: \"=\", value: a.actions_identifier },\n                { field: \"target_component_identifier\", operator: \"=\", value: a.target_component_identifier }\n            ]\n        }\n    }\n}))).concat(evidence.map(r => ({\n    label: \"evidence file \" + r.el_path,\n    method: \"POST\",\n    path: \"/ingestion/api/v1/table_of_contents/el/archive\",\n    query: { el_path: r.el_path },\n    body: {}\n})));"
+        },
+        {
+            "action": "foreach",
+            "name": "DeleteSecond",
+            "list": "$ops_second",
+            "blocks": [
+                {
+                    "action": "try",
+                    "name": "TryDeleteSecond",
+                    "try": [
+                        {
+                            "action": "if",
+                            "name": "IfDeleteSecondPost",
+                            "condition": "$DeleteSecond.item.method === \"POST\"",
+                            "then": [
+                                {
+                                    "action": "system/IBM/Concert v2/Concert HTTP Request",
+                                    "name": "DeleteSecondPost",
+                                    "inputs": [
+                                        {
+                                            "name": "authKey",
+                                            "value": "\"concertuser/Concert\""
+                                        },
+                                        {
+                                            "name": "method",
+                                            "value": "\"POST\""
+                                        },
+                                        {
+                                            "name": "path",
+                                            "value": "$DeleteSecond.item.path"
+                                        },
+                                        {
+                                            "name": "query",
+                                            "value": "$DeleteSecond.item.query"
+                                        },
+                                        {
+                                            "name": "body",
+                                            "value": "$DeleteSecond.item.body"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "else": [
+                                {
+                                    "action": "system/IBM/Concert v2/Concert HTTP Request",
+                                    "name": "DeleteSecondDelete",
+                                    "inputs": [
+                                        {
+                                            "name": "authKey",
+                                            "value": "\"concertuser/Concert\""
+                                        },
+                                        {
+                                            "name": "method",
+                                            "value": "\"DELETE\""
+                                        },
+                                        {
+                                            "name": "path",
+                                            "value": "$DeleteSecond.item.path"
+                                        },
+                                        {
+                                            "name": "query",
+                                            "value": "$DeleteSecond.item.query"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "name": "DeleteSecondOk",
+                            "function": "$deleted = $deleted.concat([$DeleteSecond.item.label]);"
+                        }
+                    ],
+                    "catch": [
+                        {
+                            "name": "DeleteSecondFailed",
+                            "function": "$failed = $failed.concat([{ item: $DeleteSecond.item.label, error: String($TryDeleteSecond.message || $TryDeleteSecond) }]);"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "FinalJobs",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"GET\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/core/api/v1/ingestion_jobs\""
+                },
+                {
+                    "name": "query",
+                    "value": "\"page_size=2000\""
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "FinalApps",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"GET\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/core/api/v2/applications\""
+                },
+                {
+                    "name": "query",
+                    "value": "\"filter=versions%3Aall&page_size=2000\""
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "FinalRepos",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"GET\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/core/api/v1/source_repos\""
+                },
+                {
+                    "name": "query",
+                    "value": "\"page_size=2000\""
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "FinalArtifacts",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"GET\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/core/api/v1/build_artifacts\""
+                },
+                {
+                    "name": "query",
+                    "value": "\"page_size=2000\""
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "FinalEnvs",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"GET\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/core/api/v1/environments\""
+                },
+                {
+                    "name": "query",
+                    "value": "\"page_size=2000\""
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "FinalActions",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"POST\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/ingestion/api/v1/actions/search\""
+                },
+                {
+                    "name": "body",
+                    "value": "{\n    \"pagination\": {\n        \"page\": 1,\n        \"page_size\": 500\n    }\n}"
+                }
+            ]
+        },
+        {
+            "action": "system/IBM/Concert v2/Concert HTTP Request",
+            "name": "FinalEvidence",
+            "inputs": [
+                {
+                    "name": "authKey",
+                    "value": "\"concertuser/Concert\""
+                },
+                {
+                    "name": "method",
+                    "value": "\"POST\""
+                },
+                {
+                    "name": "path",
+                    "value": "\"/ingestion/api/v1/table_of_contents/el/search\""
+                },
+                {
+                    "name": "body",
+                    "value": "{\n    \"page\": 1,\n    \"page_size\": 500\n}"
+                }
+            ]
+        },
+        {
+            "name": "Report",
+            "function": "const left = {\n    scan_connections: ($FinalJobs.result.ingestion_jobs || []).filter(j => j.type === \"source_control_discovery_job\").length,\n    applications: ($FinalApps.result.applications || []).length,\n    source_repos: ($FinalRepos.result.source_repos || []).length,\n    build_artifacts: ($FinalArtifacts.result.build_artifacts || []).length,\n    environments: ($FinalEnvs.result.environments || []).length,\n    actions: ($FinalActions.result.actions || []).length,\n    evidence_files: ($FinalEvidence.result.toc_records || []).filter(r => !r.is_archived).length\n};\n$result = { deleted: $deleted, failed: $failed, left_in_concert: left };\nif ($failed.length > 0) {\n    throw new Error($failed.length + \" delete(s) failed: \" + JSON.stringify($failed));\n}"
+        }
+    ],
+    "variables": [
+        {
+            "name": "result",
+            "required": false,
+            "isInput": false,
+            "isOutput": true,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "any"
+            },
+            "value": "\"\""
+        },
+        {
+            "name": "ops_first",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "any"
+            },
+            "value": "[]"
+        },
+        {
+            "name": "ops_second",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "any"
+            },
+            "value": "[]"
+        },
+        {
+            "name": "deleted",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "any"
+            },
+            "value": "[]"
+        },
+        {
+            "name": "failed",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "any"
+            },
+            "value": "[]"
+        },
+        {
+            "name": "apps_left",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "number"
+            },
+            "value": "0"
+        },
+        {
+            "name": "wait_rounds",
+            "required": false,
+            "isInput": false,
+            "isOutput": false,
+            "level": "INTERMEDIATE",
+            "type": {
+                "type": "number"
+            },
+            "value": "0"
+        }
+    ],
+    "meta": {
+        "workerGroup": "default",
+        "created": 1790883772516,
+        "lastUpdated": 1790883772516,
+        "description": "Borra todos los datos de vulnerabilidades de Concert: conexiones de escaneo de repos, aplicaciones, repositorios, build artifacts, entornos/hosts y acciones (y con ellos todas las CVEs y exposures), y archiva los ficheros del Evidence store. No toca credenciales ni workflows. Sin parametros: usa la credencial concertuser/Concert.",
+        "layout": "flow",
+        "updatedByUsername": "concertuser",
+        "numberOfBlocks": 38,
+        "version": 5,
+        "tags": [
+            {
+                "name": "Consumer",
+                "value": "Concert"
+            },
+            {
+                "name": "Category",
+                "value": "Demo housekeeping"
+            }
+        ]
+    }
+}
